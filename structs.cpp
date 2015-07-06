@@ -1,4 +1,3 @@
-#include "stdafx.h"
 #include "structs.h"
 
 const char * DNSHeader::opcodes[3] = {"Query", "IQuery", "Status"};

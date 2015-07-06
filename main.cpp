@@ -1,15 +1,16 @@
 // sniffer.cpp : Defines the entry point for the console application.
 //
-#include "stdafx.h"
-#include <conio.h>
-#include <codecvt>
+//#include "stdafx.h"
+#include <stdio.h>
+#include <string.h>
+//#include <codecvt>
 #include <map>
 #include <set>
-#include <hash_set>
+#include <unordered_set>
 
 #include "structs.h"
-#include "process.h"
-#include "sniffer.h"
+#include "platform.h"
+#include "main.h"
 
 
 inline bool InitializeSockets()
@@ -36,7 +37,7 @@ void Analizer::printErrors()
 	if(!errors.empty())
 	{
 		printf("\n!!! Found errors:");
-		for(auto i = errors.begin(); i != errors.end(); i++)
+        for(std::vector<Error>::iterator i = errors.begin(); i != errors.end(); i++)
 		{
 			printf("\n >> ");
 			i->print();
@@ -48,52 +49,50 @@ void Analizer::printErrors()
 
 bool CreateRAW()
 {
-	long flag = 1;
-	#define SIO_RCV_ALL 0x98000001
+    //#define SIO_RCV_ALL 0x98000001
 	rawSock = socket(AF_INET, SOCK_RAW, IPPROTO_UDP); // IPv4, RAW, UDP
 	//s = WSASocket(AF_INET, SOCK_RAW, IPPROTO_UDP, 0, 0, 0); // IPv4, RAW, UDP
 	if(rawSock == INVALID_SOCKET)
 	{
-		int le = WSAGetLastError();
-		printf("\nFailed to create RAW socket(error:%d)\n", le);
-		if(le == 10013) printf("This program must be run under administrator");
+        int le = errno;
+        printf("\nFailed to create RAW socket(error:%d)", le);
+        if(le == 10013 || le == 1) printf("\nThis program must be run under administrator");
 		return false;
 	}
-	SOCKADDR_IN dest = {0};
-	dest.sin_addr.s_addr = INADDR_ANY;
-	dest.sin_family = AF_INET;
-	dest.sin_port = 0;
 	char hm[128];
 	gethostname(hm, sizeof(hm));
-	HOSTENT * hi = gethostbyname(hm);
-	//getaddrinfo(
-	ZeroMemory(&dest, sizeof(dest));
+    HOSTENT * hi = gethostbyname(hm);
+
+    SOCKADDR_IN dest;
+    memset(&dest, 0, sizeof(dest));
 	dest.sin_family = AF_INET;
 	dest.sin_addr.s_addr = ((struct in_addr *)hi->h_addr_list[0])->s_addr;
 
 
 	if(bind(rawSock, (SOCKADDR *) &dest, sizeof(SOCKADDR)) == SOCKET_ERROR)
 	{
-		printf("\nFailed to bind RAW socket(error:%d)\n", WSAGetLastError());
+        printf("\nFailed to bind RAW socket(error:%d)\n", errno);
 		return false;
 	}
 
-	int timeout = 1000;
+    /*int timeout = 1000;
 	if(setsockopt(rawSock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(timeout)) == SOCKET_ERROR)
 	{
-		printf("\nFailed to set timeout for RAW socket(error:%d)\n", WSAGetLastError());
+        printf("\nFailed to set timeout for RAW socket(error:%d)\n", errno);
 		return false;
-	}
+    }*/
 	//RCVALL_VALUE v = RCVALL_ON;
 	//DWORD in;
+#if PLATFORM == PLATFORM_WINDOWS
+
 	u_long v = 1;
 	//if(WSAIoctl(s, SIO_RCVALL, &v, sizeof(v), NULL, 0, &in, 0, 0) == SOCKET_ERROR)
-	if(ioctlsocket(rawSock, SIO_RCV_ALL, &v) == SOCKET_ERROR)
+    if(ioctlsocket(rawSock, SIO_RCVALL, &v) == SOCKET_ERROR)
 	{
-		printf("\nFailed to enable receive all(error:%d)\n", WSAGetLastError());
+        printf("\nFailed to enable receive all(error:%d)\n", errno);
 		return false;
 	}
-
+#endif
 	/*if(ioctlsocket(s, SIO_RCVALL, &RS_Flag) == SOCKET_ERROR) // socket, 
 	{
 		printf("failed to create RAW socket(error:%d)\n", WSAGetLastError());
@@ -107,7 +106,7 @@ bool CreateRAW()
 BYTE buffer[MAX_PACKET_SIZE];
 
 
-void printHost(u_long host, int port = 0)
+void printHost(unsigned int host)
 {
 	//printf("%d.%d.%d.%d:%d", (host >> 24) & 255, (host >> 16) & 255, (host >> 8) & 255, host & 255, port);
 	printf("%d.%d.%d.%d", (host >> 24) & 255, (host >> 16) & 255, (host >> 8) & 255, host & 255);
@@ -199,7 +198,7 @@ const char * classes[4] = // 1 - 4
 
 BYTE * Analizer::processRecords(BYTE * x, BYTE * end, BYTE * base, int rcount, const char * sectName)
 {
-	int pref;
+    int pref;
 	std::string name;
 	for(int it = 1; it <= rcount; it++)
 	{
@@ -211,6 +210,7 @@ BYTE * Analizer::processRecords(BYTE * x, BYTE * end, BYTE * base, int rcount, c
 		testType(type);
 		testClass((x[2] << 8) | x[3]);
 		int ttl = (x[4] << 24) | (x[5] << 16) | (x[6] << 8) | x[7];
+        if(ttl <= 0) errors.push_back(Error("TTL must be positive in section %s #%d", sectName, it));
 		int rdlen = (x[8] << 8) | x[9];
 		x += 10;
 		if(x + rdlen > end) { errors.push_back("Unexpected end of packet or wrong RDLEN"); return 0;}
@@ -247,7 +247,7 @@ BYTE * Analizer::processRecords(BYTE * x, BYTE * end, BYTE * base, int rcount, c
 			if(!t) return 0;
 			name += " OS:";
 			t = loadString(name, t, end);
-			if(verbose > 1) printf(name.c_str());
+            if(verbose > 1) std::cout << name;
 			if(!t) return 0;
 			break;
 		case 14: // MINFO
@@ -351,7 +351,7 @@ void Analizer::testClass(unsigned int _class)
 }
 
 
-bool Analizer::process(BYTE * buffer, int count)
+bool Analizer::process(BYTE * buffer, unsigned int count)
 {
 	std::string name;
 	if(count < sizeof(IPHeader) + sizeof(UDPHeader)) return false;
@@ -362,7 +362,7 @@ bool Analizer::process(BYTE * buffer, int count)
 	if(ipHeadSize < 20) return false;
 	int ipSum = ip.calcSum();
 	ip.swap();
-	if(ip.flgs_offset & 0xBFFF) return false; // »„ÌÓËÛÂÏ Ù‡„ÏÂÌÚËÓ‚‡ÌÌ˚Â Ô‡ÍÂÚ˚
+	if(ip.flgs_offset & 0xBFFF) return false; // –ò–≥–Ω–æ—Ä–∏—Ä—É–µ–º —Ñ—Ä–∞–≥–º–µ–Ω—Ç–∏—Ä–æ–≤–∞–Ω–Ω—ã–µ –ø–∞–∫–µ—Ç—ã
 	x += ipHeadSize;
 	UDPHeader &udp = *(UDPHeader *) x;
 	udp.swap();
@@ -385,9 +385,9 @@ bool Analizer::process(BYTE * buffer, int count)
 	if(verbose)
 	{
 		printf("\n0x%x from ", dns.ID);
-		printHost(ip.src, udp.srcPort);
+        printHost(ip.src);
 		printf(" to ");
-		printHost(ip.dst, udp.dstPort);
+        printHost(ip.dst);
 	}
 
 	if(dns.getOpcode() > 2) errors.push_back(Error(eOpcode, dns.getOpcode()));
@@ -424,7 +424,7 @@ bool Analizer::process(BYTE * buffer, int count)
 
 volatile bool work = true;
 
-DWORD WINAPI recvThread(void * ptr)
+THREADPROC recvThread(void * ptr)
 {
 	Analizer a(ptr ? 2 : 1);
 	printf("\nWaiting for packets... press ESC to quit");
@@ -433,7 +433,7 @@ DWORD WINAPI recvThread(void * ptr)
 		int count = recv(rawSock, (char *)buffer, sizeof(buffer), 0);
 		if(count == SOCKET_ERROR)
 		{
-			int e = WSAGetLastError();
+            int e = errno;
 			if(e == 10060) continue;
 			printf("recv failed(error: %d)", e);
 		}
@@ -444,7 +444,7 @@ DWORD WINAPI recvThread(void * ptr)
 	return 0;
 }
 
-DWORD WINAPI testThread(void * ptr)
+THREADPROC testThread(void * ptr)
 {
 	Analizer a(ptr ? 2 : 1);
 	printf("\nWaiting for packet for test... press ESC to quit");
@@ -456,15 +456,15 @@ DWORD WINAPI testThread(void * ptr)
 		int count = recv(rawSock, (char *)buffer, sizeof(buffer), 0);
 		if(count == SOCKET_ERROR)
 		{
-			int e = WSAGetLastError();
+            int e = errno;
 			if(e == 10060) continue;
 			printf("\nrecv failed(error: %d)", e);
 		}
 		memcpy(bcopy, buffer, count);
 		a.verbose = ptr ? 2 : 1;
-		if(a.process(buffer, count) && a.errors.empty()) // œÓÍ‡ ‚Ò∏ ıÓÓ¯Ó
+		if(a.process(buffer, count) && a.errors.empty()) // –ü–æ–∫–∞ –≤—Å—ë —Ö–æ—Ä–æ—à–æ
 		{
-			std::hash_set<const char *> set;
+            std::unordered_set<const char *> set;
 			a.verbose = 0;
 			printf("\nTest started, count = %d\n", count);
 			for(int x = 300; --x;)
@@ -507,7 +507,7 @@ DWORD WINAPI testThread(void * ptr)
 		a.printErrors();
 	}
 	ShutdownSockets();
-	printf("\nTest map (packet offset - message):");
+    std::cout << "\nTest map (packet offset - message):";
 	for(std::map<int, mlist>::iterator it = map.begin(); it != map.end(); it++)
 		for(mlist::iterator it1 = it->second.begin(); it1 != it->second.end(); it1++)
 		{
@@ -516,7 +516,7 @@ DWORD WINAPI testThread(void * ptr)
 	return 0;
 }
 
-int _tmain(int argc, _TCHAR* argv[])
+int main(int argc, TCHAR* argv[])
 {
 	printf("DNS Packet Analizer");
 	if(argc <= 1)
@@ -527,10 +527,10 @@ int _tmain(int argc, _TCHAR* argv[])
 		printf("\n    <file> Analize frame from binary file");
 	}
 	bool test = false, verb = false;
-	std::vector<std::basic_string<TCHAR>> fnames;
+    std::vector<std::basic_string<TCHAR> > fnames;
 	for(int x = 1; x < argc; x++)
 	{
-		_TCHAR * arg = argv[x];
+        TCHAR * arg = argv[x];
 		if(!_tcscmp(arg, _T("-t"))) 
 			test = true;
 		else if(!_tcscmp(arg, _T("-v"))) 
@@ -542,11 +542,12 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	if(!fnames.empty()) for(auto it = fnames.begin(); it != fnames.end(); it++)
 	{
-		FILE * f;
+        ;
 		_tprintf(_T("\n\nAnalizing file %s"), it->c_str());
-		if(errno_t e = _tfopen_s(&f, it->c_str(), _T("rb")))
+        FILE * f = fopen(it->c_str(), _T("rb"));
+        if(!f)
 		{
-			_tprintf(_T("\nUnable to open file %s, error %d"), it->c_str(), e);
+            _tprintf(_T("\nUnable to open file %s, error %d"), it->c_str(), errno);
 			continue;
 		}
 		int count = fread(buffer, 1, sizeof(buffer), f);
@@ -564,11 +565,13 @@ int _tmain(int argc, _TCHAR* argv[])
 	{
 		InitializeSockets();
 		if(!CreateRAW()) return false;
-		HANDLE h = CreateThread(0, 0, test ? testThread : recvThread, (void *)verb, 0, 0);
+        pthread_t h = createThread(test ? testThread : recvThread, (void *)verb);
+        if(!h) return 0;
 		//uintptr_t t = _beginthread(recvThread, 0, (void *)verb);
 		while(_getch() != 27);
-		work = false;
-		WaitForSingleObject(h, INFINITE);
+        work = false;
+        closesocket(rawSock);
+        waitThread(h);
 	}
 	return 0;
 }

@@ -5,19 +5,19 @@
 struct IPHeader
 {
 	// IP
-	unsigned char  ver_len;		// âåðñèÿ è äëèíà çàãîëîâêà
-	unsigned char  tos;			// òèï ñåðâèñà
-	unsigned short length;		// äëèíà âñåãî ïàêåòà 
+	unsigned char  ver_len;		// Ð²ÐµÑ€ÑÐ¸Ñ Ð¸ Ð´Ð»Ð¸Ð½Ð° Ð·Ð°Ð³Ð¾Ð»Ð¾Ð²ÐºÐ°
+	unsigned char  tos;			// Ñ‚Ð¸Ð¿ ÑÐµÑ€Ð²Ð¸ÑÐ°
+	unsigned short length;		// Ð´Ð»Ð¸Ð½Ð° Ð²ÑÐµÐ³Ð¾ Ð¿Ð°ÐºÐµÑ‚Ð° 
 
 	unsigned short id;			// Id 
-	unsigned short flgs_offset;	// ñìåùåíèå
+	unsigned short flgs_offset;	// ÑÐ¼ÐµÑ‰ÐµÐ½Ð¸Ðµ
 
-	unsigned char  ttl;			// âðåìÿ æèçíè 
-	unsigned char  protocol;	// ïðîòîêîë 
-	unsigned short xsum;		// êîíòðîëüíàÿ ñóììà 
+	unsigned char  ttl;			// Ð²Ñ€ÐµÐ¼Ñ Ð¶Ð¸Ð·Ð½Ð¸ 
+	unsigned char  protocol;	// Ð¿Ñ€Ð¾Ñ‚Ð¾ÐºÐ¾Ð» 
+	unsigned short xsum;		// ÐºÐ¾Ð½Ñ‚Ñ€Ð¾Ð»ÑŒÐ½Ð°Ñ ÑÑƒÐ¼Ð¼Ð° 
 
-	unsigned long  src;			// IP-àäðåñ îòïðàâèòåëÿ 
-	unsigned long  dst;		    // IP-àäðåñ íàçíà÷åíèÿ 
+	unsigned long  src;			// IP-Ð°Ð´Ñ€ÐµÑ Ð¾Ñ‚Ð¿Ñ€Ð°Ð²Ð¸Ñ‚ÐµÐ»Ñ 
+	unsigned long  dst;		    // IP-Ð°Ð´Ñ€ÐµÑ Ð½Ð°Ð·Ð½Ð°Ñ‡ÐµÐ½Ð¸Ñ 
 	inline void swap()
 	{
 		length = htons(length);
@@ -53,6 +53,7 @@ struct UDPHeader
 	}
 	inline int calcSum(BYTE * end)
 	{
+        return 0;
 	}
 };
 
@@ -70,20 +71,20 @@ struct DNSHeader
 		NSCount = htons(NSCount);
 		ARCount = htons(ARCount);
 	}
-	inline int getQR() { return Flags & 0x8000;}
-	inline int getRcode() {return Flags & 0xF;}
-	inline int getOpcode() {return (Flags >> 11) & 0xF;}
+    inline unsigned int getQR() { return Flags & 0x8000;}
+    inline unsigned int getRcode() {return Flags & 0xF;}
+    inline unsigned int getOpcode() {return (Flags >> 11) & 0xF;}
 	static const char * opcodes[3];
 	static const char * rcodes[6];
 	inline const char * getRcodeStr() 
 	{
-		int rc = getRcode();
+        unsigned int rc = getRcode();
 		if(rc >= sizeof(rcodes) / sizeof(*rcodes)) return "?";
 		return rcodes[rc];
 	}
 	inline const char * getOpcodeStr() 
 	{
-		int rc = getOpcode();
+        unsigned int rc = getOpcode();
 		if(rc >= sizeof(opcodes) / sizeof(*opcodes)) return "?";
 		return opcodes[rc];
 	}

@@ -1,4 +1,7 @@
 #include <vector>
+#include <stdarg.h>
+#include <string>
+#include <iostream>
 
 typedef unsigned char       BYTE;
 
@@ -12,14 +15,14 @@ public:
 	{
 		va_list args;
 		va_start(args, format);
-		int l = _vscprintf(format, args) + 1;
+        int l = vsprintf(0, format, args);
 		message.resize(l);
-		vsprintf_s(&message[0], l, format, args);
+        vsprintf(&message[0], format, args);
 		va_end(args);
 	}
-	inline bool operator == (const char * msg) const {return format == msg;};
-	inline void print() const {printf(message.c_str());};
-	inline const char * getFormat() const {return format;};
+    inline bool operator == (const char * msg) const {return format == msg;}
+    inline void print() const {std::cout << message;}
+    inline const char * getFormat() const {return format;}
 };
 
 class Analizer
@@ -35,7 +38,7 @@ private:
 public:
 	int verbose;
 	std::vector<Error> errors;
-	bool process(BYTE * buffer, int count);
-	Analizer(int verbose): verbose(verbose) {};
+    bool process(BYTE * buffer, unsigned int count);
+    Analizer(int verbose): verbose(verbose) {}
 	void printErrors();
 };
