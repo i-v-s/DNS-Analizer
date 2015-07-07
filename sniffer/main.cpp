@@ -588,8 +588,7 @@ int _tmain(int argc, _TCHAR* argv[])
 		if(!CreateRAW()) return false;
         pthread_t h = createThread(test ? testThread : recvThread, (void *)verb);
         if(!h) return 0;
-		//uintptr_t t = _beginthread(recvThread, 0, (void *)verb);
-		while(_getch() != 27 || !work);
+		while(_getch() != 27 && work);
         work = false;
         closesocket(rawSock);
         waitThread(h);
