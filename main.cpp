@@ -438,6 +438,7 @@ THREADPROC recvThread(void * ptr)
             int e = errno;
 			if(e == 10060) continue;
             printf("\nrecv failed(error: %d)", e);
+            break;
 		}
         if(count < (signed)(14 + sizeof(IPHeader))) continue;
         a.process(buffer + 14, count - 14);
@@ -445,6 +446,7 @@ THREADPROC recvThread(void * ptr)
         fflush(stdout);
 	}
 	ShutdownSockets();
+    work = false;
 	return 0;
 }
 
@@ -465,6 +467,7 @@ THREADPROC testThread(void * ptr)
             int e = errno;
 			if(e == 10060) continue;
 			printf("\nrecv failed(error: %d)", e);
+            break;
 		}
         if(count < (signed)(14 + sizeof(IPHeader))) continue;
         count -= 14;
@@ -521,7 +524,8 @@ THREADPROC testThread(void * ptr)
 		{
 			printf("\n%.4X - %s", it->first, *it1);
 		}
-	return 0;
+    work = false;
+    return 0;
 }
 
 int main(int argc, TCHAR* argv[])
@@ -561,7 +565,6 @@ int main(int argc, TCHAR* argv[])
 
 	if(!fnames.empty()) for(auto it = fnames.begin(); it != fnames.end(); it++)
 	{
-        ;
 		_tprintf(_T("\n\nAnalizing file %s"), it->c_str());
         FILE * f = fopen(it->c_str(), _T("rb"));
         if(!f)
@@ -587,7 +590,7 @@ int main(int argc, TCHAR* argv[])
         pthread_t h = createThread(test ? testThread : recvThread, (void *)verb);
         if(!h) return 0;
 		//uintptr_t t = _beginthread(recvThread, 0, (void *)verb);
-		while(_getch() != 27);
+        while(_getch() != 27 && work);
         work = false;
         closesocket(rawSock);
         waitThread(h);
