@@ -5,19 +5,19 @@
 struct IPHeader
 {
 	// IP
-	unsigned char  ver_len;		// версия и длина заголовка
-	unsigned char  tos;			// тип сервиса
-	unsigned short length;		// длина всего пакета 
+    uint8_t  ver_len;		// версия и длина заголовка
+    uint8_t  tos;			// тип сервиса
+    uint16_t length;		// длина всего пакета
 
-	unsigned short id;			// Id 
-	unsigned short flgs_offset;	// смещение
+    uint16_t id;			// Id
+    uint16_t flgs_offset;	// смещение
 
-	unsigned char  ttl;			// время жизни 
-	unsigned char  protocol;	// протокол 
-	unsigned short xsum;		// контрольная сумма 
+    uint8_t  ttl;			// время жизни
+    uint8_t  protocol;	// протокол
+    uint16_t xsum;		// контрольная сумма
 
-	unsigned long  src;			// IP-адрес отправителя 
-	unsigned long  dst;		    // IP-адрес назначения 
+    uint32_t  src;			// IP-адрес отправителя
+    uint32_t  dst;		    // IP-адрес назначения
 	inline void swap()
 	{
 		length = htons(length);
@@ -40,10 +40,10 @@ struct IPHeader
 
 struct UDPHeader
 {
-	unsigned short srcPort;
-	unsigned short dstPort;
-	unsigned short udpLen;
-	unsigned short udpSum;
+    uint16_t srcPort;
+    uint16_t dstPort;
+    uint16_t udpLen;
+    uint16_t udpSum;
 	inline void swap()
 	{
 		srcPort = htons(srcPort);
@@ -59,9 +59,9 @@ struct UDPHeader
 
 struct DNSHeader
 {
-	unsigned short ID;
-	unsigned short Flags;
-	unsigned short QDCount, ANCount, NSCount, ARCount;
+    uint16_t ID;
+    uint16_t Flags;
+    uint16_t QDCount, ANCount, NSCount, ARCount;
 	inline void swap()
 	{
 		ID = htons(ID);

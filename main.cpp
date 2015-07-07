@@ -1,9 +1,6 @@
-// sniffer.cpp : Defines the entry point for the console application.
-//
-//#include "stdafx.h"
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-//#include <codecvt>
 #include <map>
 #include <set>
 #include <unordered_set>
@@ -31,6 +28,7 @@ inline void ShutdownSockets()
 }
 
 SOCKET rawSock = INVALID_SOCKET;
+char ifName[IFNAMSIZ] = "eth0";
 
 void Analizer::printErrors()
 {
@@ -50,7 +48,7 @@ void Analizer::printErrors()
 bool CreateRAW()
 {
     //#define SIO_RCV_ALL 0x98000001
-	rawSock = socket(AF_INET, SOCK_RAW, IPPROTO_UDP); // IPv4, RAW, UDP
+    rawSock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL)/* IPPROTO_UDP */); // IPv4, RAW, UDP
 	//s = WSASocket(AF_INET, SOCK_RAW, IPPROTO_UDP, 0, 0, 0); // IPv4, RAW, UDP
 	if(rawSock == INVALID_SOCKET)
 	{
@@ -59,39 +57,43 @@ bool CreateRAW()
         if(le == 10013 || le == 1) printf("\nThis program must be run under administrator");
 		return false;
 	}
-	char hm[128];
-	gethostname(hm, sizeof(hm));
-    HOSTENT * hi = gethostbyname(hm);
 
-    SOCKADDR_IN dest;
-    memset(&dest, 0, sizeof(dest));
-	dest.sin_family = AF_INET;
-	dest.sin_addr.s_addr = ((struct in_addr *)hi->h_addr_list[0])->s_addr;
-
-
-	if(bind(rawSock, (SOCKADDR *) &dest, sizeof(SOCKADDR)) == SOCKET_ERROR)
-	{
-        printf("\nFailed to bind RAW socket(error:%d)\n", errno);
-		return false;
-	}
-
-    /*int timeout = 1000;
-	if(setsockopt(rawSock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(timeout)) == SOCKET_ERROR)
-	{
-        printf("\nFailed to set timeout for RAW socket(error:%d)\n", errno);
-		return false;
-    }*/
-	//RCVALL_VALUE v = RCVALL_ON;
-	//DWORD in;
 #if PLATFORM == PLATFORM_WINDOWS
+
+    if(bind(rawSock, (SOCKADDR *) &dest, sizeof(SOCKADDR)) == SOCKET_ERROR)
+    {
+        printf("\nFailed to bind RAW socket(error:%d)\n", errno);
+        return false;
+    }
 
 	u_long v = 1;
 	//if(WSAIoctl(s, SIO_RCVALL, &v, sizeof(v), NULL, 0, &in, 0, 0) == SOCKET_ERROR)
     if(ioctlsocket(rawSock, SIO_RCVALL, &v) == SOCKET_ERROR)
 	{
-        printf("\nFailed to enable receive all(error:%d)\n", errno);
+        printf("\nFailed to set promiscuous mode(error:%d)\n", errno);
 		return false;
 	}
+#else
+    struct ifreq ifr;
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, ifName, IFNAMSIZ-1);
+    if(ioctl(rawSock, SIOCGIFFLAGS, &ifr) == SOCKET_ERROR)
+    {
+        printf("\nFailed to get socket flags(error:%d)\n", errno);
+        return false;
+    }
+    ifr.ifr_flags |= IFF_PROMISC;
+    if(ioctl(rawSock, SIOCSIFFLAGS, &ifr) == SOCKET_ERROR)
+    {
+        printf("\nFailed to set promiscuous mode(error:%d)\n", errno);
+        return false;
+    }
+    if(setsockopt(rawSock, SOL_SOCKET, SO_BINDTODEVICE, ifName, IFNAMSIZ-1) == SOCKET_ERROR)
+    {
+        printf("SO_BINDTODEVICE");
+        close(rawSock);
+        exit(EXIT_FAILURE);
+    }
 #endif
 	/*if(ioctlsocket(s, SIO_RCVALL, &RS_Flag) == SOCKET_ERROR) // socket, 
 	{
@@ -350,7 +352,6 @@ void Analizer::testClass(unsigned int _class)
 	else errors.push_back(Error("Unknown QCLASS %d", _class));
 }
 
-
 bool Analizer::process(BYTE * buffer, unsigned int count)
 {
 	std::string name;
@@ -398,7 +399,6 @@ bool Analizer::process(BYTE * buffer, unsigned int count)
 		printf(" %s", dns.getOpcodeStr());
 		if(dns.getQR()) printf(" response %s", dns.getRcodeStr());
 	}
-	//printf(" QD:%d AN:%d NS:%d AR:%d", dns.QDCount, dns.ANCount, dns.NSCount, dns.ARCount);
 
 	if(verbose > 1) printf("\n  Packet size:%d iphlen:%d iplen:%d udplen:%d", count, ipHeadSize, ip.length, udp.udpLen);
 	x += sizeof(DNSHeader);
@@ -427,18 +427,22 @@ volatile bool work = true;
 THREADPROC recvThread(void * ptr)
 {
 	Analizer a(ptr ? 2 : 1);
-	printf("\nWaiting for packets... press ESC to quit");
+    struct sockaddr addr;
+    socklen_t len = sizeof(addr);
+    std::cout << "\nWaiting for packets... press ESC to quit\n";
 	while(work)
 	{
-		int count = recv(rawSock, (char *)buffer, sizeof(buffer), 0);
-		if(count == SOCKET_ERROR)
+        ssize_t count = recvfrom(rawSock, (char *)buffer, sizeof(buffer), 0, &addr, &len);
+        if(count == SOCKET_ERROR)
 		{
             int e = errno;
 			if(e == 10060) continue;
-			printf("recv failed(error: %d)", e);
+            printf("\nrecv failed(error: %d)", e);
 		}
-		a.process(buffer, count);
+        if(count < (signed)(14 + sizeof(IPHeader))) continue;
+        a.process(buffer + 14, count - 14);
 		a.printErrors();
+        fflush(stdout);
 	}
 	ShutdownSockets();
 	return 0;
@@ -447,26 +451,30 @@ THREADPROC recvThread(void * ptr)
 THREADPROC testThread(void * ptr)
 {
 	Analizer a(ptr ? 2 : 1);
-	printf("\nWaiting for packet for test... press ESC to quit");
+    struct sockaddr addr;
+    socklen_t len = sizeof(addr);
+    printf("\nWaiting for packet for test... press ESC to quit\n");
 	BYTE bcopy[MAX_PACKET_SIZE];
 	typedef std::set<const char *> mlist;
 	std::map<int, mlist> map;
 	while(work)
 	{
-		int count = recv(rawSock, (char *)buffer, sizeof(buffer), 0);
+        ssize_t count = recvfrom(rawSock, (char *)buffer, sizeof(buffer), 0, &addr, &len);
 		if(count == SOCKET_ERROR)
 		{
             int e = errno;
 			if(e == 10060) continue;
 			printf("\nrecv failed(error: %d)", e);
 		}
-		memcpy(bcopy, buffer, count);
+        if(count < (signed)(14 + sizeof(IPHeader))) continue;
+        count -= 14;
+        memcpy(bcopy, buffer + 14, count);
 		a.verbose = ptr ? 2 : 1;
-		if(a.process(buffer, count) && a.errors.empty()) // Пока всё хорошо
+        if(a.process(buffer + 14, count) && a.errors.empty()) // Пока всё хорошо
 		{
             std::unordered_set<const char *> set;
 			a.verbose = 0;
-			printf("\nTest started, count = %d\n", count);
+            printf("\nTest started, count = %d\n", (int)count);
 			for(int x = 300; --x;)
 			{
 				int pos = rand() % count;
@@ -479,8 +487,8 @@ THREADPROC testThread(void * ptr)
 					if(count < 10) count = 10;
 					if(count > 10000) count = 10000;
 				}
-				memcpy(buffer, bcopy, count);
-				a.process(buffer, count);
+                memcpy(buffer + 14, bcopy, count);
+                a.process(buffer + 14, count);
 				for(std::vector<Error>::iterator i = a.errors.begin(); i != a.errors.end(); i++)
 				{
 					const char * f = i->getFormat();
@@ -501,7 +509,7 @@ THREADPROC testThread(void * ptr)
 				}
 				a.errors.clear();
 			}
-			printf("\nTest completed, count = %d", count);
+            printf("\nTest completed, count = %d\n", (int)count);
 			continue;
 		}
 		a.printErrors();
@@ -522,20 +530,31 @@ int main(int argc, TCHAR* argv[])
 	if(argc <= 1)
 	{
 		printf("\nAvailable options:");
-		printf("\n    -v     Verbose output");
-		printf("\n    -t     Make internal tests");
-		printf("\n    <file> Analize frame from binary file");
+        printf("\n    -v       Verbose output");
+        printf("\n    -t       Make internal tests");
+        printf("\n    -i <if>  Specify interface name");
+        printf("\n    <file>   Analize frame from binary file");
 	}
 	bool test = false, verb = false;
     std::vector<std::basic_string<TCHAR> > fnames;
 	for(int x = 1; x < argc; x++)
 	{
         TCHAR * arg = argv[x];
-		if(!_tcscmp(arg, _T("-t"))) 
+        if(!_tcscmp(arg, _T("-t")))
 			test = true;
-		else if(!_tcscmp(arg, _T("-v"))) 
+        else if(!_tcscmp(arg, _T("-v")))
 			verb = true;
-		else if(arg[0] != '-') 
+        else if(!_tcscmp(arg, _T("-i")))
+        {
+            if(++x >= argc || argv[x][0] == '-')
+            {
+                printf("\nError: Interface name expected");
+                x--;
+                continue;
+            }
+            strncpy(ifName, argv[x], sizeof(ifName));
+        }
+        else if(arg[0] != '-')
 			fnames.push_back(arg);
 		else _tprintf(_T("\nUnknown key %s"), arg);
 	}
@@ -572,6 +591,7 @@ int main(int argc, TCHAR* argv[])
         work = false;
         closesocket(rawSock);
         waitThread(h);
+        printf("\n");
 	}
 	return 0;
 }

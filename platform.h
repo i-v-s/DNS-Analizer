@@ -24,6 +24,9 @@
 #elif PLATFORM == PLATFORM_MAC || PLATFORM == PLATFORM_UNIX
 
     #include <sys/socket.h>
+    #include <net/if.h>
+    #include <sys/ioctl.h>
+    #include <netinet/if_ether.h>
     #include <errno.h>
     #include <netinet/in.h>
     #include <arpa/inet.h>

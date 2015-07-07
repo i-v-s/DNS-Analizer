@@ -3,7 +3,7 @@
 #include <string>
 #include <iostream>
 
-typedef unsigned char       BYTE;
+typedef uint8_t BYTE;
 
 class Error
 {
@@ -15,9 +15,9 @@ public:
 	{
 		va_list args;
 		va_start(args, format);
-        int l = vsprintf(0, format, args);
-		message.resize(l);
-        vsprintf(&message[0], format, args);
+        char buf[256];
+        vsnprintf(buf, sizeof(buf), format, args);
+        message = buf;
 		va_end(args);
 	}
     inline bool operator == (const char * msg) const {return format == msg;}
