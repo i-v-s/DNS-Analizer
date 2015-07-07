@@ -17,11 +17,41 @@
 
     #include <winsock2.h>
 	#include <MSTcpIP.h>
-
+	#include <Ws2tcpip.h>
+    #define waitThread(h) WaitForSingleObject(h, INFINITE)
+    typedef DWORD (WINAPI * THREADPROC) (LPVOID param);
+    #define pthread_t HANDLE
 #elif PLATFORM == PLATFORM_MAC || PLATFORM == PLATFORM_UNIX
 
     #include <sys/socket.h>
+    #include <net/if.h>
+    #include <sys/ioctl.h>
+    #include <netinet/if_ether.h>
+    #include <errno.h>
     #include <netinet/in.h>
+    #include <arpa/inet.h>
+    #include <netdb.h>
     #include <fcntl.h>
+    #include <unistd.h>
+    #include <pthread.h>
 
+    typedef int SOCKET;
+    typedef struct sockaddr_in SOCKADDR_IN;
+    typedef struct sockaddr SOCKADDR;
+    typedef struct hostent HOSTENT;
+    typedef unsigned char BYTE;
+    typedef char TCHAR;
+    #define _T(a) a
+    #define INVALID_SOCKET (-1)
+    #define SOCKET_ERROR (-1)
+    #define _tcscmp strcmp
+    #define ioctlsocket fcntl
+    #define _tfopen_s fopen_s
+    #define _tprintf printf
+    #define waitThread(tid) pthread_join(tid, NULL)
+    #define THREADPROC void *
+    int _getch();
+    #define closesocket(s) shutdown(s, 2)
 #endif
+
+pthread_t createThread(THREADPROC proc, void * arg);

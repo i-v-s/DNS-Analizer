@@ -1,6 +1,7 @@
 #include <vector>
-
-typedef unsigned char       BYTE;
+#include <stdint.h>
+#include <stdarg.h>
+#include "platform.h"
 
 class Error
 {
@@ -12,9 +13,9 @@ public:
 	{
 		va_list args;
 		va_start(args, format);
-		int l = _vscprintf(format, args) + 1;
-		message.resize(l);
-		vsprintf_s(&message[0], l, format, args);
+        char buf[256];
+        vsnprintf(buf, sizeof(buf), format, args);
+        message = buf;
 		va_end(args);
 	}
 	inline bool operator == (const char * msg) const {return format == msg;};
@@ -35,7 +36,7 @@ private:
 public:
 	int verbose;
 	std::vector<Error> errors;
-	bool process(BYTE * buffer, int count);
-	Analizer(int verbose): verbose(verbose) {};
+    bool process(BYTE * buffer, unsigned int count);
+    Analizer(int verbose): verbose(verbose) {}
 	void printErrors();
 };

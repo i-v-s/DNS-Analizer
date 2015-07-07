@@ -1,15 +1,16 @@
 // sniffer.cpp : Defines the entry point for the console application.
 //
 #include "stdafx.h"
+#include <iostream>
 #include <conio.h>
 #include <codecvt>
 #include <map>
 #include <set>
-#include <hash_set>
+#include <unordered_set>
 
 #include "structs.h"
 #include "process.h"
-#include "sniffer.h"
+#include "main.h"
 
 
 inline bool InitializeSockets()
@@ -45,6 +46,7 @@ void Analizer::printErrors()
 	}
 }
 
+char ifName[32] = {0};
 
 bool CreateRAW()
 {
@@ -69,8 +71,14 @@ bool CreateRAW()
 	//getaddrinfo(
 	ZeroMemory(&dest, sizeof(dest));
 	dest.sin_family = AF_INET;
-	dest.sin_addr.s_addr = ((struct in_addr *)hi->h_addr_list[0])->s_addr;
-
+	if(ifName[0])
+	{
+		inet_pton(AF_INET, ifName, &dest.sin_addr);
+	}
+	else
+	{
+		dest.sin_addr.s_addr = ((struct in_addr *)hi->h_addr_list[0])->s_addr;
+	}
 
 	if(bind(rawSock, (SOCKADDR *) &dest, sizeof(SOCKADDR)) == SOCKET_ERROR)
 	{
@@ -94,11 +102,6 @@ bool CreateRAW()
 		return false;
 	}
 
-	/*if(ioctlsocket(s, SIO_RCVALL, &RS_Flag) == SOCKET_ERROR) // socket, 
-	{
-		printf("failed to create RAW socket(error:%d)\n", WSAGetLastError());
-		return false;
-	}*/
 	return true;
 }
 
@@ -107,7 +110,7 @@ bool CreateRAW()
 BYTE buffer[MAX_PACKET_SIZE];
 
 
-void printHost(u_long host, int port = 0)
+void printHost(uint32_t host)
 {
 	//printf("%d.%d.%d.%d:%d", (host >> 24) & 255, (host >> 16) & 255, (host >> 8) & 255, host & 255, port);
 	printf("%d.%d.%d.%d", (host >> 24) & 255, (host >> 16) & 255, (host >> 8) & 255, host & 255);
@@ -199,7 +202,7 @@ const char * classes[4] = // 1 - 4
 
 BYTE * Analizer::processRecords(BYTE * x, BYTE * end, BYTE * base, int rcount, const char * sectName)
 {
-	int pref;
+    int pref;
 	std::string name;
 	for(int it = 1; it <= rcount; it++)
 	{
@@ -211,6 +214,7 @@ BYTE * Analizer::processRecords(BYTE * x, BYTE * end, BYTE * base, int rcount, c
 		testType(type);
 		testClass((x[2] << 8) | x[3]);
 		int ttl = (x[4] << 24) | (x[5] << 16) | (x[6] << 8) | x[7];
+        if(ttl <= 0) errors.push_back(Error("TTL must be positive in section %s #%d", sectName, it));
 		int rdlen = (x[8] << 8) | x[9];
 		x += 10;
 		if(x + rdlen > end) { errors.push_back("Unexpected end of packet or wrong RDLEN"); return 0;}
@@ -247,7 +251,7 @@ BYTE * Analizer::processRecords(BYTE * x, BYTE * end, BYTE * base, int rcount, c
 			if(!t) return 0;
 			name += " OS:";
 			t = loadString(name, t, end);
-			if(verbose > 1) printf(name.c_str());
+            if(verbose > 1) std::cout << name;
 			if(!t) return 0;
 			break;
 		case 14: // MINFO
@@ -351,7 +355,7 @@ void Analizer::testClass(unsigned int _class)
 }
 
 
-bool Analizer::process(BYTE * buffer, int count)
+bool Analizer::process(BYTE * buffer, unsigned int count)
 {
 	std::string name;
 	if(count < sizeof(IPHeader) + sizeof(UDPHeader)) return false;
@@ -385,9 +389,9 @@ bool Analizer::process(BYTE * buffer, int count)
 	if(verbose)
 	{
 		printf("\n0x%x from ", dns.ID);
-		printHost(ip.src, udp.srcPort);
+		printHost(ip.src);
 		printf(" to ");
-		printHost(ip.dst, udp.dstPort);
+		printHost(ip.dst);
 	}
 
 	if(dns.getOpcode() > 2) errors.push_back(Error(eOpcode, dns.getOpcode()));
@@ -436,6 +440,7 @@ DWORD WINAPI recvThread(void * ptr)
 			int e = WSAGetLastError();
 			if(e == 10060) continue;
 			printf("recv failed(error: %d)", e);
+			break;
 		}
 		a.process(buffer, count);
 		a.printErrors();
@@ -459,12 +464,13 @@ DWORD WINAPI testThread(void * ptr)
 			int e = WSAGetLastError();
 			if(e == 10060) continue;
 			printf("\nrecv failed(error: %d)", e);
+			break;
 		}
 		memcpy(bcopy, buffer, count);
 		a.verbose = ptr ? 2 : 1;
 		if(a.process(buffer, count) && a.errors.empty()) // Пока всё хорошо
 		{
-			std::hash_set<const char *> set;
+			std::unordered_set<const char *> set;
 			a.verbose = 0;
 			printf("\nTest started, count = %d\n", count);
 			for(int x = 300; --x;)
@@ -522,23 +528,39 @@ int _tmain(int argc, _TCHAR* argv[])
 	if(argc <= 1)
 	{
 		printf("\nAvailable options:");
-		printf("\n    -v     Verbose output");
-		printf("\n    -t     Make internal tests");
-		printf("\n    <file> Analize frame from binary file");
+        printf("\n    -v       Verbose output");
+        printf("\n    -t       Make internal tests");
+        printf("\n    -i <if>  Specify interface name");
+        printf("\n    <file>   Analize frame from binary file");
 	}
 	bool test = false, verb = false;
-	std::vector<std::basic_string<TCHAR>> fnames;
+    std::vector<std::basic_string<TCHAR> > fnames;
 	for(int x = 1; x < argc; x++)
 	{
-		_TCHAR * arg = argv[x];
-		if(!_tcscmp(arg, _T("-t"))) 
+        TCHAR * arg = argv[x];
+        if(!_tcscmp(arg, _T("-t")))
 			test = true;
-		else if(!_tcscmp(arg, _T("-v"))) 
+        else if(!_tcscmp(arg, _T("-v")))
 			verb = true;
-		else if(arg[0] != '-') 
+        else if(!_tcscmp(arg, _T("-i")))
+        {
+            if(++x >= argc || argv[x][0] == '-')
+            {
+                printf("\nError: Interface name expected");
+                x--;
+                continue;
+            }
+			#ifdef _UNICODE
+				WideCharToMultiByte(CP_ACP, 0, argv[x], -1, ifName, sizeof(ifName) - 1, 0, NULL);
+			#else
+				strncpy(ifName, argv[x], sizeof(ifName));
+			#endif
+        }
+        else if(arg[0] != '-')
 			fnames.push_back(arg);
 		else _tprintf(_T("\nUnknown key %s"), arg);
 	}
+
 
 	if(!fnames.empty()) for(auto it = fnames.begin(); it != fnames.end(); it++)
 	{
@@ -564,11 +586,14 @@ int _tmain(int argc, _TCHAR* argv[])
 	{
 		InitializeSockets();
 		if(!CreateRAW()) return false;
-		HANDLE h = CreateThread(0, 0, test ? testThread : recvThread, (void *)verb, 0, 0);
+        pthread_t h = createThread(test ? testThread : recvThread, (void *)verb);
+        if(!h) return 0;
 		//uintptr_t t = _beginthread(recvThread, 0, (void *)verb);
-		while(_getch() != 27);
-		work = false;
-		WaitForSingleObject(h, INFINITE);
+		while(_getch() != 27 || !work);
+        work = false;
+        closesocket(rawSock);
+        waitThread(h);
+        printf("\n");
 	}
 	return 0;
 }
