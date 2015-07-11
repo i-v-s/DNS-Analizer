@@ -14,9 +14,10 @@
 #endif
 
 #if PLATFORM == PLATFORM_WINDOWS
+    #define _WIN32_WINNT 0x0600
 
     #include <winsock2.h>
-	#include <MSTcpIP.h>
+    //#include <MSTcpIP.h>
 	#include <Ws2tcpip.h>
     #define waitThread(h) WaitForSingleObject(h, INFINITE)
     typedef DWORD (WINAPI * THREADPROC) (LPVOID param);

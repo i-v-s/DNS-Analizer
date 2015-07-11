@@ -1,9 +1,6 @@
-// sniffer.cpp : Defines the entry point for the console application.
-//
 #include "stdafx.h"
 #include <iostream>
 #include <conio.h>
-#include <codecvt>
 #include <map>
 #include <set>
 #include <unordered_set>
@@ -251,7 +248,7 @@ BYTE * Analizer::processRecords(BYTE * x, BYTE * end, BYTE * base, int rcount, c
 			if(!t) return 0;
 			name += " OS:";
 			t = loadString(name, t, end);
-            if(verbose > 1) std::cout << name;
+			if(verbose > 1) std::cout << name.c_str();
 			if(!t) return 0;
 			break;
 		case 14: // MINFO
